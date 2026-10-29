@@ -18,6 +18,7 @@ from exporter_core import (
     clear_sensitive_cache,
     export_all_chats,
     export_chat,
+    STABLE_FOLDER,
     install_local_asr_model,
     install_rust_silk,
     local_asr_status,
@@ -461,7 +462,17 @@ class App(tk.Tk):
         db_dir = self.db_dir_var.get().strip() or None
         thread = threading.Thread(
             target=self.worker_zip,
-            args=(name, outdir, db_dir),
+            args=(
+                name,
+                outdir,
+                db_dir,
+                (
+                    self.images_var.get(),
+                    self.files_var.get(),
+                    self.voices_var.get(),
+                    self.videos_var.get(),
+                ),
+            ),
             daemon=True,
         )
         thread.start()
@@ -553,18 +564,19 @@ class App(tk.Tk):
         except Exception as e:
             self.q.put(("error", f"{type(e).__name__}: {e}"))
 
-    def worker_zip(self, name, outdir, db_dir):
+    def worker_zip(self, name, outdir, db_dir, media=(False, False, False, False)):
         try:
             result = export_chat(
                 name,
                 outdir,
                 progress=lambda m: self.q.put(("log", m)),
-                export_images=False,
-                export_files=False,
-                export_voices=False,
-                export_videos=False,
+                export_images=media[0],
+                export_files=media[1],
+                export_voices=media[2],
+                export_videos=media[3],
                 transcribe_voices=False,
                 db_dir=db_dir,
+                folder_name=STABLE_FOLDER,
             )
             chat_dir = Path(result["output_dir"])
             zip_path = chat_dir.parent / f"{chat_dir.name}.zip"

@@ -57,6 +57,7 @@ WECHAT_DATA_SUBDIRS = ("xwechat_files", "WeChat Files", "xwechat_files_data")
 SENSITIVE_TEMP_ROOT_NAME = "wechat-chat-export-sensitive"
 LEGACY_WECHATAUTO_CACHE_NAME = "wechatauto_db"
 SENSITIVE_OWNER_MARKER = ".owner.json"
+STABLE_FOLDER = object()
 UNMARKED_STALE_SECONDS = 24 * 60 * 60
 UPSTREAM_KEYS_ENV = "WECHATAUTO_KEYS_DIR"
 _SENSITIVE_SANDBOX_LOCK = threading.RLock()
@@ -2571,6 +2572,9 @@ def _export_chat_impl(
     if not rows:
         raise EmptyConversationError("没有读取到该会话的消息。")
 
+    if folder_name is STABLE_FOLDER:
+        # Same "<username> [<hash10>]" folder as the batch export.
+        folder_name = _stable_batch_folder(username)
     out_root = Path(out_root)
     chat_dir = out_root / safe_folder_name(folder_name or target_name)
     chat_dir.mkdir(parents=True, exist_ok=True)
@@ -3393,6 +3397,7 @@ def export_chat(
     export_videos=False,
     transcribe_voices=False,
     db_dir=None,
+    folder_name=None,
 ):
     # 导出前顺便清理本项目上次异常退出留下、且已确认失效的工作目录。
     stale_report = clear_current_sensitive_cache()
@@ -3422,6 +3427,7 @@ def export_chat(
                 transcribe_voices=transcribe_voices,
                 db_dir=db_dir,
                 workdir=str(workdir),
+                folder_name=folder_name,
             )
     except BaseException:
         # KeyboardInterrupt / SystemExit 也先尽力删除本次敏感工作目录，再原样抛出。
