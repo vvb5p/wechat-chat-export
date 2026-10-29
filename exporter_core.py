@@ -338,16 +338,16 @@ def _cleanup_sensitive_workdir(workdir: Path, progress=None):
 
     if ok:
         if progress:
-            progress("敏感临时缓存已清理。")
+            progress("Чувствительный временный кэш очищен.")
         try:
             workdir.parent.rmdir()
         except OSError:
             pass
     elif progress:
         progress(
-            "敏感临时缓存清理失败："
-            f"{workdir}（{error}）。"
-            "请在没有导出任务运行时使用“清除敏感缓存”重试。"
+            "Очистка чувствительного временного кэша не удалась: "
+            f"{workdir} ({error}). "
+            "Повторите попытку с помощью «Очистить чувствительный кэш», когда нет запущенных задач экспорта."
         )
     return ok, error
 
@@ -1731,7 +1731,7 @@ def install_rust_silk(progress=None):
 
     existing = _find_rust_silk()
     if existing is not None:
-        log(f"rust-silk 已存在：{existing}")
+        log(f"rust-silk уже существует: {existing}")
         return str(existing)
 
     target = _persistent_app_data_dir() / "tools" / "rust-silk.exe"
@@ -1742,7 +1742,7 @@ def install_rust_silk(progress=None):
         archive = td / "rust-silk.zip"
         extracted = td / "rust-silk.exe"
 
-        log("正在从官方 GitHub Release 下载 rust-silk v0.1.3…")
+        log("Загрузка rust-silk v0.1.3 из официального GitHub Release…")
         request = urllib.request.Request(
             RUST_SILK_URL,
             headers={"User-Agent": f"WeChat-Chat-Export-for-LLM/{APP_VERSION}"},
@@ -1756,7 +1756,7 @@ def install_rust_silk(progress=None):
                 "rust-silk SHA-256 校验失败。"
                 f"期望 {RUST_SILK_ZIP_SHA256}，实际 {actual}"
             )
-        log("rust-silk 下载完成，SHA-256 校验通过。")
+        log("Загрузка rust-silk завершена, SHA-256 проверен.")
 
         with zipfile.ZipFile(archive, "r") as zf:
             member = next(
@@ -1775,7 +1775,7 @@ def install_rust_silk(progress=None):
         shutil.copy2(extracted, temp_target)
         os.replace(temp_target, target)
 
-    log(f"rust-silk 已安装：{target}")
+    log(f"rust-silk установлен: {target}")
     return str(target)
 
 
@@ -1929,7 +1929,7 @@ def install_local_asr_model(progress=None):
     existing_model, existing_tokens = _find_sensevoice_model()
     if existing_model and existing_tokens:
         if _sha256_file(existing_model).lower() == SENSEVOICE_MODEL_SHA256:
-            log("SenseVoice 模型已经安装，无需重复下载。")
+            log("Модель SenseVoice уже установлена, повторная загрузка не требуется.")
             return str(existing_model)
 
     target_dir = _persistent_sensevoice_dir()
@@ -1938,7 +1938,7 @@ def install_local_asr_model(progress=None):
     with tempfile.TemporaryDirectory(prefix="wechat-chat-export-asr-") as td:
         td = Path(td)
         archive = td / "sensevoice.tar.bz2"
-        log("正在下载 SenseVoice Small Int8 模型（约 230 MB）…")
+        log("Загрузка модели SenseVoice Small Int8 (около 230 МБ)…")
 
         request = urllib.request.Request(
             SENSEVOICE_MODEL_URL,
@@ -1958,9 +1958,9 @@ def install_local_asr_model(progress=None):
                     percent = int(downloaded * 100 / total)
                     if percent >= last_percent + 10:
                         last_percent = (percent // 10) * 10
-                        log(f"模型下载：{min(percent, 100)}%")
+                        log(f"Загрузка модели: {min(percent, 100)}%")
 
-        log("正在解压模型…")
+        log("Распаковка модели…")
         model_tmp = td / "model.int8.onnx"
         tokens_tmp = td / "tokens.txt"
         license_tmp = td / "MODEL_LICENSE"
@@ -1996,7 +1996,7 @@ def install_local_asr_model(progress=None):
                 f"\n实际 SHA-256：{actual}"
             )
 
-        log("模型校验通过，正在安装…")
+        log("Модель проверена, выполняется установка…")
         for src_file, dest_name in (
             (model_tmp, "model.int8.onnx"),
             (tokens_tmp, "tokens.txt"),
@@ -2009,7 +2009,7 @@ def install_local_asr_model(progress=None):
             shutil.copy2(src_file, tmp_dest)
             os.replace(tmp_dest, target_dir / dest_name)
 
-    log("SenseVoice 本地语音识别模型安装完成。")
+    log("Локальная модель распознавания речи SenseVoice установлена.")
     return str(target_dir / "model.int8.onnx")
 
 
@@ -2550,9 +2550,9 @@ def _export_chat_impl(
     if db is None:
         if db_dir:
             db_dir = resolve_db_dir(db_dir)
-            log(f"正在连接微信本地数据库…（指定目录：{db_dir}）")
+            log(f"Подключение к локальной базе данных WeChat… (указанная папка: {db_dir})")
         else:
-            log("正在连接微信本地数据库…")
+            log("Подключение к локальной базе данных WeChat…")
         db = WeChatDB(db_dir=db_dir, workdir=workdir)
 
     if contact is not None:
@@ -2565,8 +2565,8 @@ def _export_chat_impl(
     else:
         raise ValueError("必须提供会话关键词或已解析的联系人。")
     is_group = username.endswith("@chatroom")
-    log(f"已识别：{'群聊' if is_group else '私聊'} · {target_name}")
-    log("正在读取消息…")
+    log(f"Распознано: {'групповой чат' if is_group else 'личный чат'} · {target_name}")
+    log("Чтение сообщений…")
     rows = load_rows(db, username)
     if not rows:
         raise EmptyConversationError("没有读取到该会话的消息。")
@@ -2617,31 +2617,31 @@ def _export_chat_impl(
             "finder_feed": finder_feed,
         })
         if progress and idx % 2000 == 0:
-            log(f"已处理 {idx}/{len(rows)} 条消息…")
+            log(f"Обработано {idx}/{len(rows)} сообщений…")
 
     if self_username is None:
-        log("发送者身份警告：未能确认本机账号 username，无法判断“我”；未使用昵称或数字 ID 猜测。")
+        log("Предупреждение идентификации отправителя: не удалось подтвердить username текущего аккаунта, невозможно определить «я»; ник или цифровой ID не использовались для угадывания.")
     sender_warnings = {
         status: count for status, count in sender_counts.items()
         if status not in {"resolved", "system"}
     }
     if sender_warnings:
         reasons = {
-            "missing_name2id": "来源分片缺少 Name2Id",
-            "unsupported_name2id": "来源分片 Name2Id 结构不支持",
-            "invalid_sender_id": "发送者 ID 无效",
-            "unmapped_sender_id": "来源分片没有对应发送者 ID",
-            "invalid_sender_username": "映射中的 username 无效",
-            "unexpected_private_sender": "私聊映射到双方以外的账号",
-            "self_unknown": "本机账号未确认",
+            "missing_name2id": "в исходном шарде отсутствует Name2Id",
+            "unsupported_name2id": "структура Name2Id в исходном шарде не поддерживается",
+            "invalid_sender_id": "некорректный ID отправителя",
+            "unmapped_sender_id": "в исходном шарде нет соответствующего ID отправителя",
+            "invalid_sender_username": "некорректный username в сопоставлении",
+            "unexpected_private_sender": "при личном чате сопоставлен аккаунт вне двух сторон",
+            "self_unknown": "текущий аккаунт не подтверждён",
         }
         summary = "；".join(
             f"{count}× {reasons.get(status, status)}"
             for status, count in sender_warnings.items()
         )
         log(
-            f"发送者身份警告：{sum(sender_warnings.values())}/{len(parsed)} 条消息需复查；"
-            f"{summary}。请查看 JSON 的 source_db、real_sender_id、sender_username、sender_status。"
+            f"Предупреждение идентификации отправителя: {sum(sender_warnings.values())}/{len(parsed)} сообщений требуют проверки; "
+            f"{summary}. Смотрите поля JSON source_db, real_sender_id, sender_username, sender_status."
         )
 
     media_stats = {
@@ -2676,13 +2676,13 @@ def _export_chat_impl(
         image_failures, file_failures, voice_failures, video_failures = Counter(), Counter(), Counter(), Counter()
 
         if image_rows_exist:
-            log("正在定位本机图片缓存…")
+            log("Поиск кэша изображений на этом компьютере…")
             image_index = _index_image_files(db, username)
             if "cfg_probe" in cache:
                 cfg_dword, cfg_error = cache["cfg_probe"]
-                log("复用已探测的图片解密配置。")
+                log("Используется ранее определённая конфигурация расшифровки изображений.")
             else:
-                log("正在准备图片解密配置…")
+                log("Подготовка конфигурации расшифровки изображений…")
                 cfg_dword, cfg_error = _ensure_cfg_dword(db)
                 cache["cfg_probe"] = (cfg_dword, cfg_error)
             if cfg_dword:
@@ -2690,35 +2690,35 @@ def _export_chat_impl(
                     md._cfg_dword = cfg_dword
                 except Exception:
                     pass
-                log("已获取图片解密配置。")
+                log("Конфигурация расшифровки изображений получена.")
             elif cfg_error:
-                log(f"图片解密配置暂未获取：{cfg_error}")
+                log(f"Конфигурация расшифровки изображений пока не получена: {cfg_error}")
             if image_index:
                 if "image_keys" in cache:
                     image_keys = cache["image_keys"]
-                    log("复用已探测的图片解密密钥。")
+                    log("Используются ранее определённые ключи расшифровки изображений.")
                 else:
                     image_keys = _detect_image_keys_fast(md)
                     cache["image_keys"] = image_keys
-                    log("图片解密密钥已就绪。" if image_keys else "未获取到图片解密密钥；将优先回退导出微信明文缩略图。")
+                    log("Ключи расшифровки изображений готовы." if image_keys else "Ключи расшифровки изображений не получены; будет использован кэш открытых миниатюр WeChat.")
 
         if file_rows_exist:
             if "file_index" in cache:
                 file_index = cache["file_index"]
-                log(f"复用已索引的本机文件缓存：{file_index.get('count', 0)} 个文件。")
+                log(f"Используется ранее проиндексированный кэш файлов: {file_index.get('count', 0)} файлов.")
             else:
-                log("正在索引本机文件缓存…")
+                log("Индексирование кэша файлов на этом компьютере…")
                 file_index = _index_local_files(db)
                 cache["file_index"] = file_index
-                log(f"已索引本机文件缓存：{file_index.get('count', 0)} 个文件。")
+                log(f"Проиндексировано файлов в кэше: {file_index.get('count', 0)}.")
 
         if video_rows_exist:
-            log("正在索引本机视频缓存…")
+            log("Индексирование кэша видео на этом компьютере…")
             video_index = _index_video_files(db, username)
-            log(f"已索引本机视频缓存：{video_index.get('count', 0)} 个 MP4。")
+            log(f"Проиндексировано видео в кэше: {video_index.get('count', 0)} MP4.")
 
         if export_voices and _find_rust_silk() is None:
-            log("未找到 rust-silk：语音仍会导出为 SILK，但暂不能自动生成 WAV。")
+            log("rust-silk не найден: голосовые сообщения всё равно будут экспортированы как SILK, но WAV пока не будет создаваться автоматически.")
 
         asr_recognizer = None
         asr_cache_path = None
@@ -2734,9 +2734,9 @@ def _export_chat_impl(
                 )
             if "asr_bundle" in cache:
                 asr_recognizer, asr_cache_path, asr_cache = cache["asr_bundle"]
-                log("复用已加载的 SenseVoice 本地语音识别模型。")
+                log("Используется ранее загруженная локальная модель распознавания речи SenseVoice.")
             else:
-                log("正在加载 SenseVoice 本地语音识别模型（CPU，4 线程）…")
+                log("Загрузка локальной модели распознавания речи SenseVoice (CPU, 4 потока)…")
                 asr_recognizer = _create_local_asr_recognizer()
                 asr_cache_path, asr_cache = _load_asr_cache(Path(out_root))
                 cache["asr_bundle"] = (
@@ -2744,7 +2744,7 @@ def _export_chat_impl(
                     asr_cache_path,
                     asr_cache,
                 )
-                log("本地语音识别已就绪。")
+                log("Локальное распознавание речи готово.")
 
         image_dir = chat_dir / "media" / "images"
         file_dir = chat_dir / "media" / "files"
@@ -2870,11 +2870,11 @@ def _export_chat_impl(
 
             if progress and idx % 200 == 0:
                 log(
-                    f"附件处理进度：{idx}/{len(rows)}，"
-                    f"图片 {media_stats['images_exported']}/{media_stats['images_requested']}，"
-                    f"文件 {media_stats['files_exported']}/{media_stats['files_requested']}，"
-                    f"语音 {media_stats['voices_exported']}/{media_stats['voices_requested']}，"
-                    f"视频 {media_stats['videos_exported']}/{media_stats['videos_requested']}"
+                    f"Прогресс обработки вложений: {idx}/{len(rows)}, "
+                    f"изображения {media_stats['images_exported']}/{media_stats['images_requested']}, "
+                    f"файлы {media_stats['files_exported']}/{media_stats['files_requested']}, "
+                    f"голосовые {media_stats['voices_exported']}/{media_stats['voices_requested']}, "
+                    f"видео {media_stats['videos_exported']}/{media_stats['videos_requested']}"
                 )
 
     if transcribe_voices and 'asr_cache_dirty' in locals() and asr_cache_dirty and asr_cache_path:
@@ -2897,37 +2897,37 @@ def _export_chat_impl(
             "messages": parsed,
         }, f, ensure_ascii=False, indent=2)
 
-    log(f"完成：{len(parsed)} 条消息")
+    log(f"Готово: {len(parsed)} сообщений")
     summaries = [
-        (export_images, "图片", "images", image_failures if 'image_failures' in locals() else Counter()),
-        (export_files, "文件", "files", file_failures if 'file_failures' in locals() else Counter()),
-        (export_voices, "语音", "voices", voice_failures if 'voice_failures' in locals() else Counter()),
-        (export_videos, "视频", "videos", video_failures if 'video_failures' in locals() else Counter()),
+        (export_images, "Изображения", "images", image_failures if 'image_failures' in locals() else Counter()),
+        (export_files, "Файлы", "files", file_failures if 'file_failures' in locals() else Counter()),
+        (export_voices, "Голосовые", "voices", voice_failures if 'voice_failures' in locals() else Counter()),
+        (export_videos, "Видео", "videos", video_failures if 'video_failures' in locals() else Counter()),
     ]
     for enabled, label, key, failures in summaries:
         if not enabled:
             continue
         requested = media_stats[f"{key}_requested"]
         exported = media_stats[f"{key}_exported"]
-        log(f"{label}：{exported}/{requested} 已导出")
+        log(f"{label}: {exported}/{requested} экспортировано")
         if failures:
             summary = "；".join(f"{count}× {reason}" for reason, count in failures.most_common(3))
-            log(f"{label}提示：{summary}")
+            log(f"{label} — примечание: {summary}")
     if export_voices:
-        log(f"语音 WAV：{media_stats['voices_decoded']}/{media_stats['voices_exported']}")
+        log(f"Голосовые WAV: {media_stats['voices_decoded']}/{media_stats['voices_exported']}")
     if transcribe_voices:
         log(
-            f"语音转文字：{media_stats['voice_transcripts']}/{media_stats['voices_requested']}；"
-            f"本地识别 {media_stats['voice_transcripts_local']}；"
-            f"复用缓存 {media_stats['voice_transcripts_cached']}；"
-            f"失败 {media_stats['voice_transcripts_failed']}"
+            f"Голос в текст: {media_stats['voice_transcripts']}/{media_stats['voices_requested']}; "
+            f"локальное распознавание {media_stats['voice_transcripts_local']}; "
+            f"из кэша {media_stats['voice_transcripts_cached']}; "
+            f"ошибок {media_stats['voice_transcripts_failed']}"
         )
         if 'asr_failures' in locals() and asr_failures:
             summary = "；".join(
                 f"{count}× {reason}"
                 for reason, count in asr_failures.most_common(3)
             )
-            log(f"语音转文字提示：{summary}")
+            log(f"Голос в текст — примечание: {summary}")
 
     return {
         "chat_name": target_name,
@@ -3107,8 +3107,8 @@ def _batch_chat_candidates(db, progress=None):
     chats.sort(key=priority)
     if unresolved:
         log(
-            f"有 {unresolved} 个本地消息表无法从 contact/session 数据可靠反查 username，"
-            "已跳过而不是猜测会话身份。"
+            f"{unresolved} локальных таблиц сообщений нельзя надёжно сопоставить с username по данным contact/session, "
+            "они пропущены; идентификация чатов не угадывается."
         )
     return chats, unresolved
 
@@ -3197,12 +3197,12 @@ def _export_all_chats_impl(
 
     if db_dir:
         db_dir = resolve_db_dir(db_dir)
-        log(f"正在连接微信本地数据库…（指定目录：{db_dir}）")
+        log(f"Подключение к локальной базе данных WeChat… (указанная папка: {db_dir})")
     else:
-        log("正在连接微信本地数据库…")
+        log("Подключение к локальной базе данных WeChat…")
 
     db = WeChatDB(db_dir=db_dir, workdir=str(workdir) if workdir else None)
-    log("正在枚举本机实际存在消息记录的私聊和群聊…")
+    log("Перечисление личных и групповых чатов с локальными записями сообщений…")
     chats, unresolved = _batch_chat_candidates(db, progress=progress)
     if not chats:
         extra = (
@@ -3220,9 +3220,9 @@ def _export_all_chats_impl(
     limited = len(chats) < discovered_total
 
     if limited:
-        log(f"已按数量上限只处理最近的 {len(chats)} 个会话。")
+        log(f"По ограничению количества обработано только последних {len(chats)} чатов.")
     else:
-        log(f"共发现 {discovered_total} 个可可靠识别的本地会话。")
+        log(f"Всего обнаружено {discovered_total} надёжно распознаваемых локальных чатов.")
 
     out_root = Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
@@ -3250,8 +3250,8 @@ def _export_all_chats_impl(
             "sender_resolution_counts": None,
             "error": None,
         }
-        kind = "群聊" if entry["is_group"] else "私聊"
-        log(f"[{position}/{len(chats)}] {kind}：{name}")
+        kind = "групповой чат" if entry["is_group"] else "личный чат"
+        log(f"[{position}/{len(chats)}] {kind}: {name}")
 
         try:
             result = _export_chat_impl(
@@ -3271,12 +3271,12 @@ def _export_all_chats_impl(
             entry["status"] = "skipped_empty"
             entry["error"] = str(exc)
             skipped_empty += 1
-            log(f"该会话没有可读取的本地消息，已跳过：{name}")
+            log(f"В этом чате нет читаемых локальных сообщений, пропущен: {name}")
         except Exception as exc:
             entry["status"] = "failed"
             entry["error"] = f"{type(exc).__name__}: {exc}"
             failed += 1
-            log(f"该会话导出失败，继续下一个：{entry['error']}")
+            log(f"Ошибка экспорта этого чата, переходим к следующему: {entry['error']}")
         else:
             entry.update({
                 "status": "exported",
@@ -3311,10 +3311,10 @@ def _export_all_chats_impl(
     }
     index_json, index_md = _write_all_chats_index(out_root, results, meta)
     log(
-        f"全部完成：成功 {exported}、无消息 {skipped_empty}、失败 {failed}；"
-        f"共 {total_messages} 条消息。"
+        f"Полностью завершено: успешно {exported}, без сообщений {skipped_empty}, ошибок {failed}; "
+        f"всего {total_messages} сообщений."
     )
-    log(f"总索引：{index_md}")
+    log(f"Общий индекс: {index_md}")
 
     return {
         **meta,
@@ -3348,12 +3348,12 @@ def export_all_chats(
     stale_report = clear_current_sensitive_cache()
     if progress and stale_report.get("removed"):
         progress(
-            f"已自动清理 {len(stale_report['removed'])} 个上次异常退出留下的敏感临时目录。"
+            f"Автоматически очищено {len(stale_report['removed'])} временных чувствительных папок, оставшихся после аварийного завершения."
         )
 
     workdir = _create_sensitive_workdir()
     if progress:
-        progress("敏感数据库密钥和解密缓存将使用一次性临时目录，导出结束后自动清理。")
+        progress("Ключи баз данных и кэш расшифровки будут использовать одноразовую временную папку; она будет автоматически очищена после экспорта.")
 
     result = None
     try:
@@ -3398,13 +3398,13 @@ def export_chat(
     stale_report = clear_current_sensitive_cache()
     if progress and stale_report.get("removed"):
         progress(
-            f"已自动清理 {len(stale_report['removed'])} 个上次异常退出留下的敏感临时目录。"
+            f"Автоматически очищено {len(stale_report['removed'])} временных чувствительных папок, оставшихся после аварийного завершения."
         )
 
     # 在一次性临时 workdir 中完成导出，并在结束后清理敏感缓存。
     workdir = _create_sensitive_workdir()
     if progress:
-        progress("敏感数据库密钥和解密缓存将使用一次性临时目录，导出结束后自动清理。")
+        progress("Ключи баз данных и кэш расшифровки будут использовать одноразовую временную папку; она будет автоматически очищена после экспорта.")
 
     result = None
     try:

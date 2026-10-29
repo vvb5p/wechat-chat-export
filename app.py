@@ -7,6 +7,7 @@ import queue
 import sys
 import threading
 import tkinter as tk
+import zipfile
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -25,7 +26,7 @@ from exporter_core import (
 from preview import open_chat_preview
 from wechat_data_dirs import choose_wechat_data_dir
 
-APP_TITLE = "微信聊天导出给大模型"
+APP_TITLE = "Экспорт чатов WeChat для больших моделей"
 WECHAT_PROCESS_NAMES = {"weixin.exe", "wechat.exe"}
 
 # 与 EXE 文件图标使用同一套图形。
@@ -80,74 +81,81 @@ class App(tk.Tk):
 
         ttk.Label(
             pad,
-            text="微信聊天信息 → 大模型可读 TXT / Markdown / JSON",
+            text="Чаты WeChat → TXT / Markdown / JSON, понятные большим моделям",
             font=("Microsoft YaHei UI", 16, "bold"),
         ).grid(row=0, column=0, sticky="w")
 
         tk.Label(
             pad,
-            text="⚠ 使用前请先登录 Windows 微信，并保持微信在后台运行。",
+            text="⚠ Перед использованием войдите в WeChat для Windows и оставьте его запущенным.",
             fg="#b45309",
             font=("Microsoft YaHei UI", 10, "bold"),
         ).grid(row=1, column=0, sticky="w", pady=(8, 2))
 
         ttk.Label(
             pad,
-            text="支持私聊与群聊。输入准确备注名、昵称或群名；程序会自动识别。",
+            text="Поддерживаются личные и групповые чаты. Введите точное имя, псевдоним или название группы; программа распознает автоматически.",
         ).grid(row=2, column=0, sticky="w", pady=(2, 16))
 
         row = ttk.Frame(pad)
         row.grid(row=3, column=0, sticky="ew")
         row.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(row, text="好友 / 群聊：").grid(row=0, column=0, sticky="w")
+        ttk.Label(row, text="Друг / группа:").grid(row=0, column=0, sticky="w")
         self.name_var = tk.StringVar()
         self.entry = ttk.Entry(row, textvariable=self.name_var)
         self.entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
         self.entry.bind("<Return>", lambda e: self.start_export())
 
-        self.export_btn = ttk.Button(row, text="开始导出", command=self.start_export)
+        self.export_btn = ttk.Button(row, text="Начать экспорт", command=self.start_export)
         self.export_btn.grid(row=0, column=2)
 
         self.export_all_btn = ttk.Button(
             row,
-            text="导出全部聊天",
+            text="Экспорт всех чатов",
             command=self.start_export_all,
         )
         self.export_all_btn.grid(row=0, column=3, padx=(8, 0))
+
+        self.zip_btn = ttk.Button(
+            row,
+            text="Выгрузить группу в zip (только JSON)",
+            command=self.start_export_zip,
+        )
+        self.zip_btn.grid(row=0, column=4, padx=(8, 0))
 
         outrow = ttk.Frame(pad)
         outrow.grid(row=4, column=0, sticky="ew", pady=(12, 8))
         outrow.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(outrow, text="输出目录：").grid(row=0, column=0, sticky="w")
+        ttk.Label(outrow, text="Папка вывода:").grid(row=0, column=0, sticky="w")
         self.out_var = tk.StringVar(value=str(app_dir() / "exports"))
         ttk.Entry(outrow, textvariable=self.out_var).grid(
             row=0, column=1, sticky="ew", padx=(8, 8)
         )
-        ttk.Button(outrow, text="选择", command=self.choose_out).grid(row=0, column=2)
+        ttk.Button(outrow, text="Выбрать", command=self.choose_out).grid(row=0, column=2)
 
         dbrow = ttk.Frame(pad)
         dbrow.grid(row=5, column=0, sticky="ew", pady=(0, 8))
         dbrow.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(dbrow, text="微信数据目录：").grid(row=0, column=0, sticky="w")
+        ttk.Label(dbrow, text="Папка данных WeChat:").grid(row=0, column=0, sticky="w")
         self.db_dir_var = tk.StringVar()
         ttk.Entry(dbrow, textvariable=self.db_dir_var).grid(
             row=0, column=1, sticky="ew", padx=(8, 8)
         )
-        ttk.Button(dbrow, text="选择", command=self.choose_db_dir).grid(
+        ttk.Button(dbrow, text="Выбрать", command=self.choose_db_dir).grid(
             row=0, column=2
         )
         ttk.Label(
             dbrow,
-            text="留空自动探测；点“选择”可列出本机发现的微信数据目录，也可手动浏览。",
+            text="Оставьте пустым для автоопределения; нажмите «Выбрать», чтобы увидеть найденные папки данных WeChat или выбрать вручную.",
             foreground="#6b7280",
         ).grid(row=1, column=1, columnspan=2, sticky="w", padx=(8, 0), pady=(2, 0))
 
         media_row = ttk.Frame(pad)
         media_row.grid(row=6, column=0, sticky="ew", pady=(2, 2))
-        ttk.Label(media_row, text="附带导出：").pack(side="left")
+        ttk.Label(media_row, text="Дополнительно экспортировать:").pack(side="left")
 
         self.images_var = tk.BooleanVar(value=True)
         self.files_var = tk.BooleanVar(value=True)
@@ -156,27 +164,27 @@ class App(tk.Tk):
         self.transcribe_var = tk.BooleanVar(value=False)
 
         ttk.Checkbutton(
-            media_row, text="图片", variable=self.images_var
+            media_row, text="Изображения", variable=self.images_var
         ).pack(side="left", padx=(6, 8))
         ttk.Checkbutton(
-            media_row, text="文件", variable=self.files_var
+            media_row, text="Файлы", variable=self.files_var
         ).pack(side="left", padx=(0, 8))
         ttk.Checkbutton(
-            media_row, text="语音", variable=self.voices_var
+            media_row, text="Голосовые", variable=self.voices_var
         ).pack(side="left", padx=(0, 8))
         ttk.Checkbutton(
-            media_row, text="视频", variable=self.videos_var
+            media_row, text="Видео", variable=self.videos_var
         ).pack(side="left", padx=(0, 8))
         ttk.Checkbutton(
             media_row,
-            text="语音转文字（本地）",
+            text="Распознавание голоса в текст (локально)",
             variable=self.transcribe_var,
             command=self.on_transcribe_toggle,
         ).pack(side="left", padx=(0, 8))
 
         ttk.Label(
             pad,
-            text="仅导出本机仍有缓存的附件；“语音转文字（本地）”默认关闭，勾选后会自动同时导出语音。",
+            text="Экспортируются только вложения, кэш которых ещё есть на этом компьютере. «Распознавание голоса в текст (локально)» по умолчанию выключено; при включении голосовые сообщения будут экспортироваться автоматически.",
         ).grid(row=7, column=0, sticky="w", pady=(2, 4))
 
         ttk.Separator(pad).grid(row=8, column=0, sticky="ew", pady=10)
@@ -195,7 +203,7 @@ class App(tk.Tk):
 
         self.clear_cache_btn = ttk.Button(
             bottom,
-            text="清除敏感缓存",
+            text="Очистить чувствительный кэш",
             command=self.clear_sensitive_cache_ui,
         )
         self.clear_cache_btn.grid(
@@ -204,7 +212,7 @@ class App(tk.Tk):
 
         self.existing_preview_btn = ttk.Button(
             bottom,
-            text="预览已有聊天",
+            text="Предпросмотр готового чата",
             command=self.open_existing_preview,
         )
         self.existing_preview_btn.grid(
@@ -212,7 +220,7 @@ class App(tk.Tk):
         )
         self.preview_btn = ttk.Button(
             bottom,
-            text="打开聊天预览",
+            text="Открыть предпросмотр чата",
             command=self.open_preview,
             state="disabled",
         )
@@ -220,7 +228,7 @@ class App(tk.Tk):
 
         self.open_btn = ttk.Button(
             bottom,
-            text="打开导出文件夹",
+            text="Открыть папку экспорта",
             command=self.open_output,
             state="disabled",
         )
@@ -233,12 +241,12 @@ class App(tk.Tk):
         failed = startup_cache_report.get("failed") or []
         if removed:
             self.log(
-                f"已自动清理上次异常退出留下的敏感临时缓存：{len(removed)} 个目录。"
+                f"Автоматически очищены чувствительные временные файлы, оставшиеся после аварийного завершения: {len(removed)} папок."
             )
         if failed:
             self.log(
-                "检测到敏感临时缓存残留，但自动清理失败。"
-                "可在确认没有导出任务运行后使用‘清除敏感缓存’重试。"
+                "Обнаружены остатки чувствительного временного кэша, но автоматическая очистка не удалась. "
+                "Повторите попытку с помощью кнопки «Очистить чувствительный кэш», убедившись, что нет запущенных задач экспорта."
             )
 
         self.entry.focus_set()
@@ -251,22 +259,24 @@ class App(tk.Tk):
     def clear_sensitive_cache_ui(self):
         confirmed = messagebox.askyesno(
             APP_TITLE,
-            "将清除本工具可能留下的敏感临时缓存，包括：\n\n"
-            "1. v1.3.4 当前版本的一次性临时工作目录；\n"
-            "2. v1.3.3 及更早版本 / wechatauto-replica 默认保存在 "
-            "%TEMP%\\wechatauto_db 下的数据库密钥、图片密钥和解密数据库缓存。\n\n"
-            "这不会删除微信原始聊天数据库，也不会删除已经导出的聊天结果。\n\n"
-            "如果还有其他程序正在使用 wechatauto-replica，请先关闭它们。\n\n"
-            "确定继续吗？",
+            "Будут удалены чувствительные временные файлы, которые могла оставить эта утилита:\n\n"
+            "1. Одноразовые рабочие папки текущей версии v1.3.4;\n"
+            "2. Ключи баз данных, ключи изображений и кэш расшифрованных баз данных, "
+            "которые оставили версии v1.3.3 и ранее / wechatauto-replica по умолчанию в "
+            "%TEMP%\\wechatauto_db.\n\n"
+            "При этом не будут удалены исходные базы данных WeChat и уже экспортированные чаты.\n\n"
+            "Если другие программы всё ещё используют wechatauto-replica, сначала закройте их.\n\n"
+            "Продолжить?",
         )
         if not confirmed:
             return
 
         self.export_btn.configure(state="disabled")
         self.export_all_btn.configure(state="disabled")
+        self.zip_btn.configure(state="disabled")
         self.clear_cache_btn.configure(state="disabled")
         self.log("")
-        self.log("正在清除敏感临时缓存…")
+        self.log("Очистка чувствительного временного кэша…")
         threading.Thread(
             target=self.clear_sensitive_cache_worker,
             daemon=True,
@@ -283,21 +293,21 @@ class App(tk.Tk):
             ))
 
     def choose_db_dir(self):
-        self.log("正在查找本机微信数据目录……")
+        self.log("Поиск папки данных WeChat на этом компьютере…")
         try:
             path = choose_wechat_data_dir(
                 self,
                 current=self.db_dir_var.get().strip() or None,
             )
         except Exception as exc:
-            self.log(f"查找微信数据目录失败：{type(exc).__name__}: {exc}")
+            self.log(f"Не удалось найти папку данных WeChat: {type(exc).__name__}: {exc}")
             path = filedialog.askdirectory(
                 parent=self,
                 initialdir=self.db_dir_var.get() or str(Path.home()),
             )
         if path:
             self.db_dir_var.set(path)
-            self.log(f"已选择微信数据目录：{path}")
+            self.log(f"Выбрана папка данных WeChat: {path}")
 
     def choose_out(self):
         path = filedialog.askdirectory(
@@ -315,13 +325,14 @@ class App(tk.Tk):
     def _set_export_buttons(self, state):
         self.export_btn.configure(state=state)
         self.export_all_btn.configure(state=state)
+        self.zip_btn.configure(state=state)
 
     def _warn_wechat_not_running(self):
-        self.log("未检测到正在运行的 Windows 微信。")
+        self.log("WeChat для Windows не запущен.")
         messagebox.showwarning(
             APP_TITLE,
-            "未检测到正在运行的 Windows 微信。\n\n"
-            "请先启动并登录微信，保持微信在后台运行，然后重新开始导出。",
+            "WeChat для Windows не запущен.\n\n"
+            "Запустите и войдите в WeChat, оставьте его работать в фоне, а затем начните экспорт заново.",
         )
 
     def _check_media_ready(self, transcribe_voices):
@@ -330,17 +341,17 @@ class App(tk.Tk):
             if not ok:
                 install_now = messagebox.askyesno(
                     APP_TITLE,
-                    "当前没有找到 rust-silk 语音解码器。\n\n"
-                    "微信语音需要它才能从 SILK 转成 WAV；"
-                    "本地语音转文字也需要先得到 WAV。\n\n"
-                    "程序会从 rust-silk 官方 GitHub Release 下载固定的 v0.1.3，"
-                    "并在安装前校验 SHA-256。\n\n"
-                    "现在下载并安装吗？",
+                    "Декодер речи rust-silk не найден.\n\n"
+                    "Он нужен, чтобы преобразовать голосовые сообщения WeChat из SILK в WAV; "
+                    "локальное распознавание голоса в текст также требует WAV.\n\n"
+                    "Программа загрузит фиксированную версию v0.1.3 из официального GitHub Release rust-silk "
+                    "и проверит SHA-256 перед установкой.\n\n"
+                    "Загрузить и установить сейчас?",
                 )
                 if install_now:
                     self._set_export_buttons("disabled")
                     self.log("")
-                    self.log("开始安装 rust-silk 语音解码器…")
+                    self.log("Установка декодера речи rust-silk…")
                     threading.Thread(
                         target=self.install_rust_silk_worker,
                         daemon=True,
@@ -349,8 +360,8 @@ class App(tk.Tk):
                 if transcribe_voices:
                     messagebox.showwarning(
                         APP_TITLE,
-                        "未安装 rust-silk，无法把 SILK 转成 WAV，"
-                        "因此不能继续本地语音转文字。",
+                        "rust-silk не установлен, невозможно преобразовать SILK в WAV, "
+                        "поэтому локальное распознавание голоса в текст недоступно.",
                     )
                     return False
 
@@ -360,25 +371,25 @@ class App(tk.Tk):
                 if reason.startswith("本地语音识别运行库不可用"):
                     messagebox.showerror(
                         APP_TITLE,
-                        "当前程序缺少本地语音识别运行库。\n\n"
-                        "如果你使用的是 GitHub 发布的 Windows 版，请重新下载最新构建；"
-                        "如果从源码运行，请先安装 requirements.txt。\n\n"
-                        f"详细信息：{reason}",
+                        "Отсутствуют библиотеки локального распознавания речи.\n\n"
+                        "Если вы используете сборку для Windows из GitHub, загрузите последнюю версию; "
+                        "если запускаете из исходников, установите зависимости из requirements.txt.\n\n"
+                        f"Подробности: {reason}",
                     )
                     return False
 
                 install_now = messagebox.askyesno(
                     APP_TITLE,
-                    "本地语音识别模型还没有安装。\n\n"
-                    "需要从 sherpa-onnx 官方 GitHub Release 下载约 230 MB 的 "
-                    "SenseVoice Small Int8 模型。\n"
-                    "模型只下载一次，之后识别在本机完成，不上传聊天语音。\n\n"
-                    "现在下载并安装吗？",
+                    "Локальная модель распознавания речи ещё не установлена.\n\n"
+                    "Нужно загрузить около 230 МБ модели SenseVoice Small Int8 "
+                    "из официального GitHub Release sherpa-onnx.\n"
+                    "Модель загружается один раз, дальше распознавание выполняется локально — голосовые сообщения не отправляются в сеть.\n\n"
+                    "Загрузить и установить сейчас?",
                 )
                 if install_now:
                     self._set_export_buttons("disabled")
                     self.log("")
-                    self.log("开始安装本地语音识别模型…")
+                    self.log("Установка локальной модели распознавания речи…")
                     threading.Thread(
                         target=self.install_asr_worker,
                         daemon=True,
@@ -398,7 +409,7 @@ class App(tk.Tk):
     def start_export(self):
         name = self.name_var.get().strip()
         if not name:
-            messagebox.showwarning(APP_TITLE, "请输入好友备注名、昵称或群名。")
+            messagebox.showwarning(APP_TITLE, "Введите имя друга, псевдоним или название группы.")
             return
 
         if not is_wechat_running():
@@ -414,7 +425,7 @@ class App(tk.Tk):
             return
 
         self._begin_export()
-        self.log(f"开始导出：{name}")
+        self.log(f"Начинаем экспорт: {name}")
 
         thread = threading.Thread(
             target=self.worker,
@@ -432,6 +443,29 @@ class App(tk.Tk):
         )
         thread.start()
 
+    def start_export_zip(self):
+        name = self.name_var.get().strip()
+        if not name:
+            messagebox.showwarning(APP_TITLE, "Введите имя друга, псевдоним или название группы.")
+            return
+
+        if not is_wechat_running():
+            self._warn_wechat_not_running()
+            return
+
+        self.pending_all = False
+        self._begin_export()
+        self.log(f"Выгрузка в zip (только JSON): {name}")
+
+        outdir = self.out_var.get().strip() or str(app_dir() / "exports")
+        db_dir = self.db_dir_var.get().strip() or None
+        thread = threading.Thread(
+            target=self.worker_zip,
+            args=(name, outdir, db_dir),
+            daemon=True,
+        )
+        thread.start()
+
     def start_export_all(self):
         if not is_wechat_running():
             self._warn_wechat_not_running()
@@ -439,13 +473,13 @@ class App(tk.Tk):
 
         if not messagebox.askyesno(
             APP_TITLE,
-            "将导出本机所有能够从本地消息表可靠识别的私聊和群聊。\n\n"
-            "· 只处理实际存在本地消息表的会话，不把‘只加过好友’当成聊天；\n"
-            "· 无法可靠反查 username 的消息表会跳过，不会猜测身份；\n"
-            "· 每个会话使用由稳定 username 派生的固定目录，避免同名联系人串目录；\n"
-            "· 勾选图片、文件、语音或视频时可能占用大量磁盘空间；\n"
-            "· 如需先小范围试跑，可用命令行 --all --limit 20。\n\n"
-            "确定开始吗？",
+            "Будут экспортированы все личные и групповые чаты, которые можно надёжно определить по локальным таблицам сообщений.\n\n"
+            "· Обрабатываются только чаты с реальными записями в локальных таблицах сообщений; «просто добавленные в друзья» не считаются чатами.\n"
+            "· Таблицы сообщений, по которым нельзя надёжно восстановить username, пропускаются; идентификация не угадывается.\n"
+            "· Для каждого чата используется постоянная папка, производная от стабильного username, чтобы контакты с одинаковыми именами не смешивались.\n"
+            "· При включении изображений, файлов, голосовых или видео может потребоваться много места на диске.\n"
+            "· Чтобы сначала проверить на небольшом объёме, используйте в командной строке --all --limit 20.\n\n"
+            "Начать?",
         ):
             return
 
@@ -458,7 +492,7 @@ class App(tk.Tk):
             return
 
         self._begin_export()
-        self.log("开始导出全部聊天…")
+        self.log("Начинаем экспорт всех чатов…")
         thread = threading.Thread(
             target=self.worker_all,
             args=(
@@ -519,6 +553,34 @@ class App(tk.Tk):
         except Exception as e:
             self.q.put(("error", f"{type(e).__name__}: {e}"))
 
+    def worker_zip(self, name, outdir, db_dir):
+        try:
+            result = export_chat(
+                name,
+                outdir,
+                progress=lambda m: self.q.put(("log", m)),
+                export_images=False,
+                export_files=False,
+                export_voices=False,
+                export_videos=False,
+                transcribe_voices=False,
+                db_dir=db_dir,
+            )
+            chat_dir = Path(result["output_dir"])
+            zip_path = chat_dir.parent / f"{chat_dir.name}.zip"
+            full_json = chat_dir / "chat_full_parsed.json"
+            files_list_json = chat_dir / "files_list.json"
+            if not full_json.is_file():
+                raise FileNotFoundError(f"chat_full_parsed.json не найден в {chat_dir}")
+            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.write(full_json, arcname=f"{chat_dir.name}/chat_full_parsed.json")
+                if files_list_json.is_file():
+                    zf.write(files_list_json, arcname=f"{chat_dir.name}/files_list.json")
+            self.q.put(("done", result))
+            self.q.put(("log", f"Zip готов: {zip_path}"))
+        except Exception as e:
+            self.q.put(("error", f"{type(e).__name__}: {e}"))
+
     def worker_all(
         self,
         outdir,
@@ -553,8 +615,9 @@ class App(tk.Tk):
                 elif kind == "done":
                     self.last_output = payload["output_dir"]
                     self.last_result = payload
-                    self.log(f"输出：{payload['output_dir']}")
+                    self.log(f"Вывод: {payload['output_dir']}")
                     self.export_btn.configure(state="normal")
+                    self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
                     self.clear_cache_btn.configure(state="normal")
                     self.open_btn.configure(state="normal")
@@ -562,18 +625,18 @@ class App(tk.Tk):
 
                     stats = payload.get("media_stats") or {}
                     media_line = (
-                        f"\n图片：{stats.get('images_exported', 0)}/"
+                        f"\nИзображения: {stats.get('images_exported', 0)}/"
                         f"{stats.get('images_requested', 0)}"
-                        f"\n文件：{stats.get('files_exported', 0)}/"
+                        f"\nФайлы: {stats.get('files_exported', 0)}/"
                         f"{stats.get('files_requested', 0)}"
-                        f"\n语音：{stats.get('voices_exported', 0)}/"
+                        f"\nГолосовые: {stats.get('voices_exported', 0)}/"
                         f"{stats.get('voices_requested', 0)}"
-                        f"（WAV {stats.get('voices_decoded', 0)}）"
-                        f"\n语音转文字：{stats.get('voice_transcripts', 0)}/"
+                        f" (WAV {stats.get('voices_decoded', 0)})"
+                        f"\nГолос в текст: {stats.get('voice_transcripts', 0)}/"
                         f"{stats.get('voices_requested', 0)}"
-                        f"（本地 {stats.get('voice_transcripts_local', 0)}，"
-                        f"缓存 {stats.get('voice_transcripts_cached', 0)}）"
-                        f"\n视频：{stats.get('videos_exported', 0)}/"
+                        f" (локально {stats.get('voice_transcripts_local', 0)}, "
+                        f"кэш {stats.get('voice_transcripts_cached', 0)})"
+                        f"\nВидео: {stats.get('videos_exported', 0)}/"
                         f"{stats.get('videos_requested', 0)}"
                     )
 
@@ -583,9 +646,9 @@ class App(tk.Tk):
                         ""
                         if cleanup_ok
                         else (
-                            "\n\n⚠ 敏感临时缓存自动清理失败。"
-                            "\n请点击“清除敏感缓存”重试。"
-                            + (f"\n详细信息：{cleanup_error}" if cleanup_error else "")
+                            "\n\n⚠ Автоматическая очистка чувствительного временного кэша не удалась."
+                            "\nНажмите «Очистить чувствительный кэш», чтобы повторить."
+                            + (f"\nПодробности: {cleanup_error}" if cleanup_error else "")
                         )
                     )
                     show_result = (
@@ -595,18 +658,18 @@ class App(tk.Tk):
                     )
                     show_result(
                         APP_TITLE,
-                        f"导出完成。\n\n"
-                        f"类型：{'群聊' if payload['is_group'] else '私聊'}\n"
-                        f"消息数：{payload['message_count']}\n"
-                        f"会话：{payload['chat_name']}"
+                        f"Экспорт завершён.\n\n"
+                        f"Тип: {'Групповой чат' if payload['is_group'] else 'Личный чат'}\n"
+                        f"Сообщений: {payload['message_count']}\n"
+                        f"Чат: {payload['chat_name']}"
                         f"{media_line}\n\n"
-                        "已生成 TXT、Markdown 和 JSON。"
+                        "Созданы файлы TXT, Markdown и JSON."
                         f"{cleanup_note}",
                     )
                 elif kind == "all_done":
                     self.last_output = payload["output_dir"]
                     self.last_result = None
-                    self.log(f"输出：{payload['output_dir']}")
+                    self.log(f"Вывод: {payload['output_dir']}")
                     self._set_export_buttons("normal")
                     self.clear_cache_btn.configure(state="normal")
                     self.open_btn.configure(state="normal")
@@ -618,14 +681,14 @@ class App(tk.Tk):
                         ""
                         if cleanup_ok
                         else (
-                            "\n\n⚠ 敏感临时缓存自动清理失败。"
-                            "\n请点击‘清除敏感缓存’重试。"
-                            + (f"\n详细信息：{cleanup_error}" if cleanup_error else "")
+                            "\n\n⚠ Автоматическая очистка чувствительного временного кэша не удалась."
+                            "\nНажмите «Очистить чувствительный кэш», чтобы повторить."
+                            + (f"\nПодробности: {cleanup_error}" if cleanup_error else "")
                         )
                     )
                     unresolved = payload.get("unresolved_message_tables", 0)
                     unresolved_note = (
-                        f"\n无法可靠反查身份、已跳过的消息表：{unresolved}"
+                        f"\nТаблиц сообщений с неопределённой идентичностью, пропущено: {unresolved}"
                         if unresolved
                         else ""
                     )
@@ -636,69 +699,73 @@ class App(tk.Tk):
                     )
                     show_result(
                         APP_TITLE,
-                        "全部聊天导出完成。\n\n"
-                        f"可可靠识别会话：{payload['discovered_total']}\n"
-                        f"本次处理：{payload['selected_total']}\n"
-                        f"成功：{payload['exported']}\n"
-                        f"无消息：{payload['skipped_empty']}\n"
-                        f"失败：{payload['failed']}\n"
-                        f"消息总数：{payload['total_messages']}"
+                        "Экспорт всех чатов завершён.\n\n"
+                        f"Надёжно распознанных чатов: {payload['discovered_total']}\n"
+                        f"Обработано в этот раз: {payload['selected_total']}\n"
+                        f"Успешно: {payload['exported']}\n"
+                        f"Без сообщений: {payload['skipped_empty']}\n"
+                        f"Ошибок: {payload['failed']}\n"
+                        f"Всего сообщений: {payload['total_messages']}"
                         f"{unresolved_note}\n\n"
-                        f"总索引：\n{payload['index_md']}"
+                        f"Общий индекс:\n{payload['index_md']}"
                         f"{cleanup_note}",
                     )
                 elif kind == "cache_cleared":
                     self.export_btn.configure(state="normal")
+                    self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
                     self.clear_cache_btn.configure(state="normal")
                     removed = payload.get("removed") or []
                     failed = payload.get("failed") or []
                     if removed:
                         for path in removed:
-                            self.log(f"已清除：{path}")
+                            self.log(f"Очищено: {path}")
                     else:
-                        self.log("没有发现需要清理的敏感缓存。")
+                        self.log("Нет чувствительного кэша для очистки.")
                     if failed:
                         details = "\n".join(
-                            f"{item.get('path')}：{item.get('error')}"
+                            f"{item.get('path')}: {item.get('error')}"
                             for item in failed
                         )
-                        self.log("部分敏感缓存清理失败。")
+                        self.log("Часть чувствительного кэша не удалось очистить.")
                         messagebox.showwarning(
                             APP_TITLE,
-                            "部分敏感缓存清理失败。\n\n"
-                            "请确认没有其他程序正在使用这些文件，然后重试。\n\n"
+                            "Часть чувствительного кэша не удалось очистить.\n\n"
+                            "Убедитесь, что другие программы не используют эти файлы, и повторите попытку.\n\n"
                             + details,
                         )
                     else:
                         messagebox.showinfo(
                             APP_TITLE,
-                            "敏感缓存清理完成。"
+                            "Чувствительный кэш очищен."
                             if removed
-                            else "没有发现需要清理的敏感缓存。",
+                            else "Нет чувствительного кэша для очистки.",
                         )
                 elif kind == "cache_clear_error":
                     self.export_btn.configure(state="normal")
+                    self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
                     self.clear_cache_btn.configure(state="normal")
-                    self.log("敏感缓存清理失败：" + payload)
+                    self.log("Очистка чувствительного кэша не удалась: " + payload)
                     messagebox.showerror(
                         APP_TITLE,
-                        "敏感缓存清理失败：\n\n" + payload,
+                        "Очистка чувствительного кэша не удалась:\n\n" + payload,
                     )
                 elif kind == "asr_installed":
                     self.export_btn.configure(state="normal")
+                    self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
-                    self.log("本地语音识别模型安装完成。")
+                    self.log("Локальная модель распознавания речи установлена.")
                     messagebox.showinfo(
                         APP_TITLE,
-                        "本地语音识别模型安装完成。\n\n"
-                        "现在可以重新开始导出。",
+                        "Локальная модель распознавания речи установлена.\n\n"
+                        "Теперь можно начать экспорт заново.",
                     )
                 elif kind == "rust_silk_installed":
                     self.export_btn.configure(state="normal")
+                    self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
-                    self.log("rust-silk 安装完成，继续导出。")
+                    self.log("rust-silk установлен, продолжаем экспорт.")
                     resume = (
                         self.start_export_all if self.pending_all
                         else self.start_export
@@ -706,28 +773,31 @@ class App(tk.Tk):
                     self.after(0, resume)
                 elif kind == "rust_silk_error":
                     self.export_btn.configure(state="normal")
+                    self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
-                    self.log("rust-silk 安装失败：" + payload)
+                    self.log("Установка rust-silk не удалась: " + payload)
                     messagebox.showerror(
                         APP_TITLE,
-                        "rust-silk 安装失败：\n\n" + payload,
+                        "Установка rust-silk не удалась:\n\n" + payload,
                     )
                 elif kind == "asr_error":
                     self.export_btn.configure(state="normal")
+                    self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
-                    self.log("本地语音识别模型安装失败：" + payload)
+                    self.log("Установка локальной модели распознавания речи не удалась: " + payload)
                     messagebox.showerror(
                         APP_TITLE,
-                        "本地语音识别模型安装失败：\n\n" + payload,
+                        "Установка локальной модели распознавания речи не удалась:\n\n" + payload,
                     )
                 elif kind == "error":
                     self.export_btn.configure(state="normal")
+                    self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
                     self.clear_cache_btn.configure(state="normal")
-                    self.log("导出失败：" + payload)
+                    self.log("Экспорт не удался: " + payload)
                     messagebox.showerror(
                         APP_TITLE,
-                        "导出失败：\n\n" + payload,
+                        "Экспорт не удался:\n\n" + payload,
                     )
         except queue.Empty:
             pass
@@ -750,7 +820,7 @@ class App(tk.Tk):
 
         folder = filedialog.askdirectory(
             parent=self,
-            title="选择已导出的聊天文件夹",
+            title="Выберите папку экспортированного чата",
             initialdir=str(initial_dir),
         )
         if not folder:
@@ -760,8 +830,8 @@ class App(tk.Tk):
         if not json_path.is_file():
             messagebox.showwarning(
                 APP_TITLE,
-                "这个文件夹里没有找到 chat_full_parsed.json。\n\n"
-                "请选择一个具体的聊天导出文件夹。",
+                "В этой папке не найден chat_full_parsed.json.\n\n"
+                "Выберите конкретную папку экспорта чата.",
             )
             return
 

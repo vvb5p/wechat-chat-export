@@ -101,8 +101,8 @@ def _inspect_root(root: Path, sources: set[str], auto_root: Path | None) -> dict
     auto_selected = auto_root is not None and _norm_key(root) == _norm_key(auto_root)
     labels = set(sources)
     if auto_selected:
-        labels.add("当前自动探测")
-    latest_text = datetime.fromtimestamp(latest).strftime("%Y-%m-%d %H:%M") if latest else "未知"
+        labels.add("Текущее автоопределение")
+    latest_text = datetime.fromtimestamp(latest).strftime("%Y-%m-%d %H:%M") if latest else "Неизвестно"
     return {
         "path": str(root),
         "account_count": len(accounts),
@@ -316,18 +316,18 @@ def discover_wechat_data_dirs(current: str | None = None) -> list[dict]:
         entry = candidates.setdefault(key, {"root": root, "sources": set()})
         entry["sources"].add(source)
 
-    add(current, "当前输入")
+    add(current, "Текущий ввод")
     if auto_root is not None:
-        add(auto_root, "自动探测")
+        add(auto_root, "Автоопределение")
 
     for value in _config_candidate_paths():
-        add(value, "微信配置")
+        add(value, "Конфигурация WeChat")
     for value in _registry_candidate_paths():
-        add(value, "注册表")
+        add(value, "Реестр")
     for value in _common_candidate_paths():
-        add(value, "常见位置")
+        add(value, "Распространённые пути")
     for value in _shallow_drive_candidates():
-        add(value, "磁盘浅层扫描")
+        add(value, "Поверхностное сканирование дисков")
 
     rows = [
         _inspect_root(entry["root"], entry["sources"], auto_root)
@@ -355,16 +355,16 @@ def choose_wechat_data_dir(parent, current: str | None = None) -> str | None:
 
     if not rows:
         messagebox.showinfo(
-            "微信数据目录",
-            "没有自动发现可确认的微信数据目录。\n\n"
-            "接下来可以手动浏览文件夹；通常选择微信“设置 → 文件管理”里显示的目录即可。",
+            "Папка данных WeChat",
+            "Не удалось автоматически найти подтверждённую папку данных WeChat.\n\n"
+            "Далее можно выбрать папку вручную; обычно это каталог, указанный в WeChat в «Настройки → Управление файлами».",
             parent=parent,
         )
         return _browse_other(parent, current)
 
     result = {"path": None}
     win = tk.Toplevel(parent)
-    win.title("选择微信数据目录")
+    win.title("Выбор папки данных WeChat")
     win.geometry("900x420")
     win.minsize(760, 330)
     win.transient(parent)
@@ -374,7 +374,7 @@ def choose_wechat_data_dir(parent, current: str | None = None) -> str | None:
 
     ttk.Label(
         win,
-        text="已发现以下微信数据目录。按数据库最近修改时间排序，较新的通常更可能是正在使用的数据。",
+        text="Найдены следующие папки данных WeChat. Сортировка по времени последнего изменения базы данных; более новые, скорее всего, используются сейчас.",
         wraplength=840,
     ).grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
 
@@ -385,10 +385,10 @@ def choose_wechat_data_dir(parent, current: str | None = None) -> str | None:
 
     columns = ("path", "accounts", "latest", "source")
     tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse")
-    tree.heading("path", text="目录")
-    tree.heading("accounts", text="账号")
-    tree.heading("latest", text="最新数据库")
-    tree.heading("source", text="发现来源")
+    tree.heading("path", text="Папка")
+    tree.heading("accounts", text="Аккаунты")
+    tree.heading("latest", text="Последняя БД")
+    tree.heading("source", text="Источник")
     tree.column("path", width=430, anchor="w")
     tree.column("accounts", width=60, anchor="center", stretch=False)
     tree.column("latest", width=135, anchor="center", stretch=False)
@@ -409,8 +409,8 @@ def choose_wechat_data_dir(parent, current: str | None = None) -> str | None:
         selected = None
         for idx, item in enumerate(items):
             source = item["sources"]
-            if item["auto_selected"] and "当前自动探测" not in source:
-                source = (source + "、当前自动探测").strip("、")
+            if item["auto_selected"] and "Текущее автоопределение" not in source:
+                source = (source + "、Текущее автоопределение").strip("、")
             iid = tree.insert(
                 "",
                 "end",
@@ -435,7 +435,7 @@ def choose_wechat_data_dir(parent, current: str | None = None) -> str | None:
 
     note = ttk.Label(
         win,
-        text="这里只做高可信来源 + 固定磁盘浅层扫描，不会递归扫完整个硬盘。找不到时可点“浏览其他目录”。",
+        text="Используются только высокодостоверные источники и поверхностное сканирование фиксированных дисков; рекурсивное сканирование всего диска не производится. Если нужной папки нет, нажмите «Обзор другой папки».",
         foreground="#6b7280",
         wraplength=840,
     )
@@ -467,22 +467,22 @@ def choose_wechat_data_dir(parent, current: str | None = None) -> str | None:
             win.destroy()
 
     def rescan():
-        note.configure(text="正在重新扫描……")
+        note.configure(text="Повторное сканирование…")
         win.configure(cursor="watch")
         win.update_idletasks()
         try:
             new_rows = discover_wechat_data_dirs(current)
             populate(new_rows)
             note.configure(
-                text=f"重新扫描完成，共发现 {len(new_rows)} 个候选。找不到时可点“浏览其他目录”。"
+                text=f"Повторное сканирование завершено, найдено вариантов: {len(new_rows)}. Если нужной папки нет, нажмите «Обзор другой папки»."
             )
         finally:
             win.configure(cursor="")
 
-    ttk.Button(buttons, text="重新扫描", command=rescan).grid(row=0, column=1, padx=(0, 8))
-    ttk.Button(buttons, text="浏览其他目录", command=browse_other).grid(row=0, column=2, padx=(0, 8))
-    ttk.Button(buttons, text="取消", command=win.destroy).grid(row=0, column=3, padx=(0, 8))
-    ttk.Button(buttons, text="使用选中目录", command=use_selected).grid(row=0, column=4)
+    ttk.Button(buttons, text="Повторное сканирование", command=rescan).grid(row=0, column=1, padx=(0, 8))
+    ttk.Button(buttons, text="Обзор другой папки", command=browse_other).grid(row=0, column=2, padx=(0, 8))
+    ttk.Button(buttons, text="Отмена", command=win.destroy).grid(row=0, column=3, padx=(0, 8))
+    ttk.Button(buttons, text="Использовать выбранную", command=use_selected).grid(row=0, column=4)
 
     tree.bind("<Double-1>", use_selected)
     win.protocol("WM_DELETE_WINDOW", win.destroy)

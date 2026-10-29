@@ -11,78 +11,78 @@ from exporter_core import (
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(description="微信聊天信息导出给大模型")
-    p.add_argument("name", nargs="?", help="好友备注/昵称或群名")
+    p = argparse.ArgumentParser(description="Экспорт сообщений WeChat для больших моделей")
+    p.add_argument("name", nargs="?", help="Примечание к другу/ник или название группы")
     p.add_argument("--out", default="exports")
     p.add_argument(
         "--images",
         action="store_true",
-        help="同时导出本机仍有缓存的聊天图片",
+        help="Также экспортировать кэшированные изображения из чатов",
     )
     p.add_argument(
         "--files",
         action="store_true",
-        help="同时导出本机仍有缓存的聊天文件",
+        help="Также экспортировать кэшированные файлы из чатов",
     )
-    p.add_argument("--voices", action="store_true", help="同时导出语音；有解码器时生成 WAV")
-    p.add_argument("--videos", action="store_true", help="同时导出本机仍有缓存的视频")
+    p.add_argument("--voices", action="store_true", help="Также экспортировать голосовые; при наличии декодера создавать WAV")
+    p.add_argument("--videos", action="store_true", help="Также экспортировать кэшированные видео")
     p.add_argument(
         "--transcribe-voices",
         action="store_true",
-        help="用本地 SenseVoice 将导出的语音转成文字；会自动开启语音导出",
+        help="Преобразовать экспортированные голосовые в текст локально с помощью SenseVoice; автоматически включает экспорт голосовых",
     )
     p.add_argument(
         "--media",
         action="store_true",
-        help="同时开启图片、文件、语音和视频导出",
+        help="Включить экспорт изображений, файлов, голосовых и видео",
     )
     p.add_argument(
         "--all",
         dest="export_all",
         action="store_true",
         help=(
-            "导出本机所有能够从本地消息表可靠识别的私聊和群聊，"
-            "并生成 all_chats_index.json / all_chats_index.md 总索引"
+            "Экспортировать все личные и групповые чаты, которые можно надёжно определить по локальным таблицам сообщений, "
+            "и создать общий индекс all_chats_index.json / all_chats_index.md"
         ),
     )
     p.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="配合 --all 使用：只导出最近的 N 个会话，便于先小范围试跑",
+        help="Используется с --all: экспортировать только последние N чатов, чтобы сначала проверить на небольшом объёме",
     )
     p.add_argument(
         "--install-asr",
         action="store_true",
-        help="下载安装本地 SenseVoice 语音识别模型后退出",
+        help="Загрузить и установить локальную модель распознавания речи SenseVoice, затем выйти",
     )
     p.add_argument(
         "--install-rust-silk",
         action="store_true",
-        help="下载安装 rust-silk 语音解码器后退出",
+        help="Загрузить и установить декодер речи rust-silk, затем выйти",
     )
     p.add_argument(
         "--clear-sensitive-cache",
         action="store_true",
         help=(
-            "清除当前版本临时敏感缓存，以及 v1.3.3 及更早版本 / "
-            "wechatauto-replica 默认留下的密钥和解密数据库缓存后退出"
+            "Очистить временный чувствительный кэш текущей версии, а также ключи и кэш расшифрованных баз данных, "
+            "оставленные версиями v1.3.3 и ранее / wechatauto-replica по умолчанию, затем выйти"
         ),
     )
     p.add_argument(
         "--db-dir",
         default=None,
         help=(
-            "微信数据目录（微信「设置 → 文件管理」里显示的那个）。"
-            "默认自动探测；数据目录被自行迁移过、或自动探测读到错误副本时指定。"
+            "Папка данных WeChat (та, что показана в WeChat в «Настройки → Управление файлами»). "
+            "По умолчанию определяется автоматически; укажите вручную, если папка была перенесена или автоопределение выбрало неправильную копию."
         ),
     )
     a = p.parse_args()
 
     if a.limit is not None and a.limit <= 0:
-        p.error("--limit 必须是正整数。")
+        p.error("--limit должен быть положительным целым числом.")
     if a.limit is not None and not a.export_all:
-        p.error("--limit 只能配合 --all 使用。")
+        p.error("--limit можно использовать только вместе с --all.")
 
     if a.install_asr:
         install_local_asr_model(progress=print)
@@ -93,23 +93,23 @@ if __name__ == "__main__":
     if a.clear_sensitive_cache:
         report = clear_sensitive_cache()
         for path in report.get("removed") or []:
-            print("已清除：" + path)
+            print("Очищено: " + path)
         if not report.get("removed"):
-            print("没有发现需要清理的敏感缓存。")
+            print("Нет чувствительного кэша для очистки.")
         failed = report.get("failed") or []
         if failed:
             for item in failed:
                 print(
-                    "清理失败："
+                    "Очистка не удалась: "
                     + str(item.get("path"))
-                    + "："
+                    + ": "
                     + str(item.get("error"))
                 )
             raise SystemExit(1)
         raise SystemExit(0)
     if a.export_all:
         if a.name:
-            print(f"注意：已指定 --all，忽略会话关键词“{a.name}”。")
+            print(f"Внимание: указан --all, ключевое слово чата «{a.name}» игнорируется.")
         result = export_all_chats(
             a.out,
             progress=print,
@@ -122,21 +122,21 @@ if __name__ == "__main__":
             limit=a.limit,
         )
         print(
-            f"可可靠识别会话 {result['discovered_total']}，"
-            f"本次处理 {result['selected_total']}；"
-            f"成功 {result['exported']}，无消息 {result['skipped_empty']}，"
-            f"失败 {result['failed']}，消息总数 {result['total_messages']}。"
+            f"Надёжно распознанных чатов {result['discovered_total']}, "
+            f"обработано в этот раз {result['selected_total']}; "
+            f"успешно {result['exported']}, без сообщений {result['skipped_empty']}, "
+            f"ошибок {result['failed']}, всего сообщений {result['total_messages']}."
         )
         if result.get("unresolved_message_tables"):
             print(
-                f"另有 {result['unresolved_message_tables']} 个消息表无法可靠反查身份，"
-                "已跳过而不是猜测。"
+                f"Ещё {result['unresolved_message_tables']} таблиц сообщений нельзя надёжно идентифицировать, "
+                "пропущены без попыток угадать."
             )
-        print("输出目录：" + result["output_dir"])
-        print("总索引：" + result["index_md"])
+        print("Папка вывода: " + result["output_dir"])
+        print("Общий индекс: " + result["index_md"])
         if not result["sensitive_cache_cleanup"]:
             print(
-                "敏感临时缓存自动清理失败："
+                "Автоматическая очистка чувствительного временного кэша не удалась: "
                 + str(result.get("sensitive_cache_cleanup_error"))
             )
             raise SystemExit(1)
@@ -144,8 +144,8 @@ if __name__ == "__main__":
 
     if not a.name:
         p.error(
-            "请提供好友备注/昵称或群名；或用 --all 导出全部聊天；"
-            "或使用 --install-asr / --install-rust-silk / "
+            "Укажите примечание к другу/ник или название группы; или используйте --all для экспорта всех чатов; "
+            "или --install-asr / --install-rust-silk / "
             "--clear-sensitive-cache"
         )
 
