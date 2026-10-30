@@ -3387,8 +3387,27 @@ def export_all_chats(
     return result
 
 
+def list_chats(progress=None, db_dir=None, groups_only=False) -> list[dict]:
+    clear_current_sensitive_cache()
+    workdir = _create_sensitive_workdir()
+    chats = []
+    try:
+        with _upstream_sensitive_sandbox(workdir):
+            db = WeChatDB(
+                db_dir=resolve_db_dir(db_dir) if db_dir else None,
+                workdir=str(workdir),
+            )
+            chats, _ = _batch_chat_candidates(db, progress=progress)
+    finally:
+        _cleanup_sensitive_workdir(workdir, progress=progress)
+
+    if groups_only:
+        chats = [c for c in chats if c.get("is_group")]
+    return chats
+
+
 def export_chat(
-    keyword: str,
+    keyword: str | None = None,
     out_root="exports",
     progress=None,
     export_images=False,
@@ -3398,6 +3417,7 @@ def export_chat(
     transcribe_voices=False,
     db_dir=None,
     folder_name=None,
+    contact=None,
 ):
     # 导出前顺便清理本项目上次异常退出留下、且已确认失效的工作目录。
     stale_report = clear_current_sensitive_cache()
@@ -3428,6 +3448,7 @@ def export_chat(
                 db_dir=db_dir,
                 workdir=str(workdir),
                 folder_name=folder_name,
+                contact=contact,
             )
     except BaseException:
         # KeyboardInterrupt / SystemExit 也先尽力删除本次敏感工作目录，再原样抛出。

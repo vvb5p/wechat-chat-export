@@ -18,6 +18,7 @@ from exporter_core import (
     clear_sensitive_cache,
     export_all_chats,
     export_chat,
+    list_chats,
     STABLE_FOLDER,
     install_local_asr_model,
     install_rust_silk,
@@ -71,6 +72,7 @@ class App(tk.Tk):
         self.last_output = None
         self.last_result = None
         self.pending_all = False
+        self.chat_items = {}
 
         pad = ttk.Frame(self, padding=18)
         pad.grid(row=0, column=0, sticky="nsew")
@@ -95,7 +97,7 @@ class App(tk.Tk):
 
         ttk.Label(
             pad,
-            text="Поддерживаются личные и групповые чаты. Введите точное имя, псевдоним или название группы; программа распознает автоматически.",
+            text="Поддерживаются личные и групповые чаты. Введите точное имя, псевдоним или название группы; программа распознает автоматически, или нажмите «Загрузить список групп» и выберите из списка.",
         ).grid(row=2, column=0, sticky="w", pady=(2, 16))
 
         row = ttk.Frame(pad)
@@ -104,26 +106,37 @@ class App(tk.Tk):
 
         ttk.Label(row, text="Друг / группа:").grid(row=0, column=0, sticky="w")
         self.name_var = tk.StringVar()
-        self.entry = ttk.Entry(row, textvariable=self.name_var)
+        self.entry = ttk.Combobox(row, textvariable=self.name_var)
         self.entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
         self.entry.bind("<Return>", lambda e: self.start_export())
+        self.entry.bind("<KeyRelease>", self._on_entry_keyrelease)
 
-        self.export_btn = ttk.Button(row, text="Начать экспорт", command=self.start_export)
-        self.export_btn.grid(row=0, column=2)
+        self.list_btn = ttk.Button(
+            row,
+            text="Загрузить список групп",
+            command=self.load_chat_list,
+        )
+        self.list_btn.grid(row=0, column=2, padx=(8, 0))
+
+        btnrow = ttk.Frame(row)
+        btnrow.grid(row=1, column=1, columnspan=2, sticky="w", padx=(8, 0), pady=(8, 0))
+
+        self.export_btn = ttk.Button(btnrow, text="Начать экспорт", command=self.start_export)
+        self.export_btn.grid(row=0, column=0)
 
         self.export_all_btn = ttk.Button(
-            row,
+            btnrow,
             text="Экспорт всех чатов",
             command=self.start_export_all,
         )
-        self.export_all_btn.grid(row=0, column=3, padx=(8, 0))
+        self.export_all_btn.grid(row=0, column=1, padx=(8, 0))
 
         self.zip_btn = ttk.Button(
-            row,
+            btnrow,
             text="Выгрузить группу в zip (только JSON)",
             command=self.start_export_zip,
         )
-        self.zip_btn.grid(row=0, column=4, padx=(8, 0))
+        self.zip_btn.grid(row=0, column=2, padx=(8, 0))
 
         outrow = ttk.Frame(pad)
         outrow.grid(row=4, column=0, sticky="ew", pady=(12, 8))
@@ -327,6 +340,7 @@ class App(tk.Tk):
         self.export_btn.configure(state=state)
         self.export_all_btn.configure(state=state)
         self.zip_btn.configure(state=state)
+        self.list_btn.configure(state=state)
 
     def _warn_wechat_not_running(self):
         self.log("WeChat для Windows не запущен.")
@@ -335,6 +349,49 @@ class App(tk.Tk):
             "WeChat для Windows не запущен.\n\n"
             "Запустите и войдите в WeChat, оставьте его работать в фоне, а затем начните экспорт заново.",
         )
+
+    def load_chat_list(self):
+        if not is_wechat_running():
+            self._warn_wechat_not_running()
+            return
+
+        self._set_export_buttons("disabled")
+        self.clear_cache_btn.configure(state="disabled")
+        self.log("Загрузка списка групп…")
+        db_dir = self.db_dir_var.get().strip() or None
+
+        def run():
+            try:
+                chats = list_chats(
+                    progress=lambda m: self.q.put(("log", m)),
+                    db_dir=db_dir,
+                    groups_only=True,
+                )
+                self.q.put(("chats", chats))
+            except Exception as exc:
+                self.q.put(("chats_error", f"{type(exc).__name__}: {exc}"))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _on_entry_keyrelease(self, event=None):
+        if not self.chat_items:
+            return
+        text = self.name_var.get().casefold()
+        if text:
+            values = [
+                label for label in self.chat_items
+                if text in label.casefold()
+            ]
+        else:
+            values = list(self.chat_items.keys())
+        self.entry["values"] = values
+
+    def _resolve_target(self):
+        text = self.name_var.get().strip()
+        item = self.chat_items.get(text)
+        if item is not None:
+            return item["name"], {"username": item["username"], "name": item["name"]}
+        return text, None
 
     def _check_media_ready(self, transcribe_voices):
         if self.voices_var.get():
@@ -400,6 +457,7 @@ class App(tk.Tk):
 
     def _begin_export(self):
         self._set_export_buttons("disabled")
+        self.list_btn.configure(state="disabled")
         self.clear_cache_btn.configure(state="disabled")
         self.open_btn.configure(state="disabled")
         self.preview_btn.configure(state="disabled")
@@ -408,7 +466,7 @@ class App(tk.Tk):
         self.log("")
 
     def start_export(self):
-        name = self.name_var.get().strip()
+        name, contact = self._resolve_target()
         if not name:
             messagebox.showwarning(APP_TITLE, "Введите имя друга, псевдоним или название группы.")
             return
@@ -439,13 +497,14 @@ class App(tk.Tk):
                 self.videos_var.get(),
                 transcribe_voices,
                 self.db_dir_var.get().strip() or None,
+                contact,
             ),
             daemon=True,
         )
         thread.start()
 
     def start_export_zip(self):
-        name = self.name_var.get().strip()
+        name, contact = self._resolve_target()
         if not name:
             messagebox.showwarning(APP_TITLE, "Введите имя друга, псевдоним или название группы.")
             return
@@ -472,6 +531,7 @@ class App(tk.Tk):
                     self.voices_var.get(),
                     self.videos_var.get(),
                 ),
+                contact,
             ),
             daemon=True,
         )
@@ -547,6 +607,7 @@ class App(tk.Tk):
         export_videos,
         transcribe_voices,
         db_dir,
+        contact=None,
     ):
         try:
             result = export_chat(
@@ -559,12 +620,13 @@ class App(tk.Tk):
                 export_videos=export_videos,
                 transcribe_voices=transcribe_voices,
                 db_dir=db_dir,
+                contact=contact,
             )
             self.q.put(("done", result))
         except Exception as e:
             self.q.put(("error", f"{type(e).__name__}: {e}"))
 
-    def worker_zip(self, name, outdir, db_dir, media=(False, False, False, False)):
+    def worker_zip(self, name, outdir, db_dir, media=(False, False, False, False), contact=None):
         try:
             result = export_chat(
                 name,
@@ -577,6 +639,7 @@ class App(tk.Tk):
                 transcribe_voices=False,
                 db_dir=db_dir,
                 folder_name=STABLE_FOLDER,
+                contact=contact,
             )
             chat_dir = Path(result["output_dir"])
             zip_path = chat_dir.parent / f"{chat_dir.name}.zip"
@@ -624,6 +687,23 @@ class App(tk.Tk):
                 kind, payload = self.q.get_nowait()
                 if kind == "log":
                     self.log(payload)
+                elif kind == "chats":
+                    self.chat_items = {
+                        f"{item['name']}  ({item['username']})": item
+                        for item in payload
+                    }
+                    self.entry["values"] = list(self.chat_items.keys())
+                    self._set_export_buttons("normal")
+                    self.clear_cache_btn.configure(state="normal")
+                    self.log(f"Загружено групп: {len(payload)}")
+                elif kind == "chats_error":
+                    self._set_export_buttons("normal")
+                    self.clear_cache_btn.configure(state="normal")
+                    self.log("Загрузка списка групп не удалась: " + payload)
+                    messagebox.showerror(
+                        APP_TITLE,
+                        "Загрузка списка групп не удалась:\n\n" + payload,
+                    )
                 elif kind == "done":
                     self.last_output = payload["output_dir"]
                     self.last_result = payload
@@ -631,6 +711,7 @@ class App(tk.Tk):
                     self.export_btn.configure(state="normal")
                     self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
+                    self.list_btn.configure(state="normal")
                     self.clear_cache_btn.configure(state="normal")
                     self.open_btn.configure(state="normal")
                     self.preview_btn.configure(state="normal")
@@ -683,6 +764,7 @@ class App(tk.Tk):
                     self.last_result = None
                     self.log(f"Вывод: {payload['output_dir']}")
                     self._set_export_buttons("normal")
+                    self.list_btn.configure(state="normal")
                     self.clear_cache_btn.configure(state="normal")
                     self.open_btn.configure(state="normal")
                     self.preview_btn.configure(state="disabled")
@@ -726,6 +808,7 @@ class App(tk.Tk):
                     self.export_btn.configure(state="normal")
                     self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
+                    self.list_btn.configure(state="normal")
                     self.clear_cache_btn.configure(state="normal")
                     removed = payload.get("removed") or []
                     failed = payload.get("failed") or []
@@ -757,6 +840,7 @@ class App(tk.Tk):
                     self.export_btn.configure(state="normal")
                     self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
+                    self.list_btn.configure(state="normal")
                     self.clear_cache_btn.configure(state="normal")
                     self.log("Очистка чувствительного кэша не удалась: " + payload)
                     messagebox.showerror(
@@ -767,6 +851,7 @@ class App(tk.Tk):
                     self.export_btn.configure(state="normal")
                     self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
+                    self.list_btn.configure(state="normal")
                     self.log("Локальная модель распознавания речи установлена.")
                     messagebox.showinfo(
                         APP_TITLE,
@@ -777,6 +862,7 @@ class App(tk.Tk):
                     self.export_btn.configure(state="normal")
                     self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
+                    self.list_btn.configure(state="normal")
                     self.log("rust-silk установлен, продолжаем экспорт.")
                     resume = (
                         self.start_export_all if self.pending_all
@@ -787,6 +873,7 @@ class App(tk.Tk):
                     self.export_btn.configure(state="normal")
                     self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
+                    self.list_btn.configure(state="normal")
                     self.log("Установка rust-silk не удалась: " + payload)
                     messagebox.showerror(
                         APP_TITLE,
@@ -796,6 +883,7 @@ class App(tk.Tk):
                     self.export_btn.configure(state="normal")
                     self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
+                    self.list_btn.configure(state="normal")
                     self.log("Установка локальной модели распознавания речи не удалась: " + payload)
                     messagebox.showerror(
                         APP_TITLE,
@@ -805,6 +893,7 @@ class App(tk.Tk):
                     self.export_btn.configure(state="normal")
                     self.zip_btn.configure(state="normal")
                     self.export_all_btn.configure(state="normal")
+                    self.list_btn.configure(state="normal")
                     self.clear_cache_btn.configure(state="normal")
                     self.log("Экспорт не удался: " + payload)
                     messagebox.showerror(
